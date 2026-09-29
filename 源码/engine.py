@@ -359,11 +359,12 @@ class Engine:
                     if saved_credentials:
                         failure={
                             'consent_failed':'登录页协议勾选未成功',
+                            'consent_unresolved':'登录页协议勾选框结构已变化，未能安全确认勾选',
                             'button_missing':'没有找到唯一的登录按钮',
                             'form_missing':'没有找到登录表单',
                             'form_changed':'勾选协议后登录表单发生变化',
                             'user_rejected':'登录账号未被页面接受',
-                            'password_rejected':'登录密码未被页面接受',
+                            'password_not_retained':'密码框没有完整保留自动输入的内容（尚未提交登录）',
                             'overwritten':'浏览器自动填充覆盖了保存的凭据',
                             'unsafe_host':'登录页跳到了非淘宝域名',
                             'input_failed':'浏览器输入未成功',

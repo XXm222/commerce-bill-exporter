@@ -11,6 +11,14 @@ import webbridge
 
 
 class BrowserDownloadTests(unittest.TestCase):
+    def test_login_input_waits_for_controlled_field_to_settle(self):
+        browser = webbridge.Chrome(Path('/tmp'), {'platform': 'tmall'})
+        with patch.object(browser, '_mouse_click'), \
+                patch.object(browser, 'call') as call, \
+                patch.object(browser, 'js', side_effect=[True, False, True]):
+            self.assertTrue(browser._type_login_field('#password', 'example-password'))
+        call.assert_called_once_with('key_type', {'text': 'example-password', 'delay': 65})
+
     def test_rerendered_row_reselects_button_before_retry(self):
         browser = webbridge.Chrome(Path('/tmp'), {'platform': 'tmall'})
         with patch.object(browser, 'wait', side_effect=['#old', '#new']), \

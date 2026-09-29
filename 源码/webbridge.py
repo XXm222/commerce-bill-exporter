@@ -286,28 +286,55 @@ class Chrome:
             while((s=s.previousElementSibling))if(s.tagName===e.tagName)n++;
             parts.unshift(e.tagName.toLowerCase()+':nth-of-type('+n+')');e=e.parentElement;}
             return parts.join('>')};
+          const agreement=/已阅读并同意|我已阅读并同意|同意.*协议|agree.*(terms|agreement)|protocol/i;
           const consentLabel=e=>e.closest('label')||
-            (e.id?[...document.querySelectorAll('label[for]')].find(l=>l.htmlFor===e.id):null);
-          const consents=[...document.querySelectorAll('input[type=checkbox]')].filter(e=>{
+            (e.id?[...document.querySelectorAll('label[for]')].find(l=>l.htmlFor===e.id):null)||
+            e.closest('.fm-optional-agreement')?.querySelector('label')||
+            e.parentElement?.querySelector('label');
+          const consentInputs=[...document.querySelectorAll('input[type=checkbox]')].filter(e=>{
             const label=consentLabel(e);
             const text=[e.id,e.name,e.className,label?.textContent,e.parentElement?.textContent].join(' ');
-            return !e.checked&&/同意|协议|agree|protocol|agreement/i.test(text)&&
-              (visible(e)||label&&visible(label));
-          }).map(e=>({box:path(e),click:path(consentLabel(e)||e)}));
+            return agreement.test(text)&&
+              (visible(e)||label&&visible(label)||visible(e.parentElement));
+          });
+          const consents=consentInputs.filter(e=>!e.checked).map(e=>{
+            const label=consentLabel(e);
+            const associated=label&&(label.contains(e)||e.id&&label.htmlFor===e.id);
+            const target=visible(e)?e:(associated&&visible(label)?label:null);
+            return {box:path(e),click:target?path(target):'',kind:'native'};
+          });
+          const roleBoxes=[...document.querySelectorAll('[role=checkbox]')].filter(visible)
+            .filter(e=>agreement.test([e.getAttribute('aria-label'),e.textContent,
+              e.parentElement?.textContent].join(' ')));
+          for(const e of roleBoxes.filter(e=>e.getAttribute('aria-checked')!=='true'))
+            consents.push({box:path(e),click:path(e),kind:'role'});
+          const agreementVisible=[...document.querySelectorAll('.fm-optional-agreement,label,[role=checkbox]')]
+            .some(e=>visible(e)&&agreement.test(e.textContent));
           return {found:passwords.length===1&&users.length===1,
             user:users.length===1?path(users[0]):'',password:passwords.length===1?path(passwords[0]):'',
-            button:buttons.length===1?path(buttons[0]):'',consents};})()''') or {}
+            button:buttons.length===1?path(buttons[0]):'',consents,
+            consentUnresolved:agreementVisible&&!consentInputs.length&&!roleBoxes.length};})()''') or {}
 
     def _type_login_field(self, selector, value):
         # Focus emulation lets trusted keyboard input reach this Chrome tab
         # without launching a second browser or replacing the user's profile.
-        self._mouse_click(selector, manage_focus=False)
-        self.js('''(()=>{const e=document.querySelector(__SEL__);if(!e)return false;
-          e.focus();e.select();return true})()'''.replace('__SEL__', json.dumps(selector)))
-        self.call('key_type', {'text': value, 'delay': 65})
-        return self.js('''(()=>{const e=document.querySelector(__SEL__);
-          return !!e&&e.value===__VALUE__})()'''.replace('__SEL__', json.dumps(selector))
-                    .replace('__VALUE__', json.dumps(value, ensure_ascii=False))) is True
+        readback='''(()=>{const e=document.querySelector(__SEL__);
+          return !!e&&e.value===__VALUE__})()'''.replace('__SEL__', json.dumps(selector)) \
+                    .replace('__VALUE__', json.dumps(value, ensure_ascii=False))
+        for _ in range(2):
+            self._mouse_click(selector, manage_focus=False)
+            selected=self.js('''(()=>{const e=document.querySelector(__SEL__);if(!e)return false;
+              e.focus();e.select();return true})()'''.replace('__SEL__', json.dumps(selector)))
+            if selected is not True:
+                return False
+            self.call('key_type', {'text': value, 'delay': 65})
+            # The login page updates React-controlled inputs asynchronously.
+            # A single immediate read used to misreport this as a bad password.
+            if self.wait(lambda: self.js(readback) is True, timeout=1.5, interval=.1):
+                return True
+            # Readback is known to differ; select-all makes one replacement
+            # attempt safe even when part of the first key sequence arrived.
+        return False
 
     def autofill(self, username, password):
         """Type saved credentials, accept required login terms and submit."""
@@ -328,22 +355,28 @@ class Chrome:
             if not self._type_login_field(fields['user'], username):
                 return {'filled': False, 'submitted': False, 'reason': 'user_rejected'}
             if not self._type_login_field(fields['password'], password):
-                return {'filled': False, 'submitted': False, 'reason': 'password_rejected'}
+                return {'filled': False, 'submitted': False, 'reason': 'password_not_retained'}
             # Login agreements are part of the requested automatic sign-in.
             # Click the visible label with trusted input, then verify the actual
             # checkbox state before submitting.  An unchecked box must never
             # result in a misleading "submitted" response.
+            if fields.get('consentUnresolved'):
+                return {'filled': True, 'submitted': False, 'reason': 'consent_unresolved'}
             for consent in fields['consents']:
+                if not consent['click']:
+                    return {'filled': True, 'submitted': False, 'reason': 'consent_unresolved'}
                 self._mouse_click(consent['click'], manage_focus=False)
                 checked = self.wait(lambda: self.js('''(()=>{const e=document.querySelector(__BOX__);
-                  return !!e&&e.checked})()'''.replace('__BOX__', json.dumps(consent['box']))),
+                  return !!e&&(__KIND__==='role'?e.getAttribute('aria-checked')==='true':e.checked)})()'''
+                    .replace('__BOX__', json.dumps(consent['box']))
+                    .replace('__KIND__', json.dumps(consent['kind']))),
                                     timeout=2, interval=.1)
                 if not checked:
                     return {'filled': True, 'submitted': False, 'reason': 'consent_failed'}
             fields = self._login_fields()
             if not fields.get('found'):
                 return {'filled': True, 'submitted': False, 'reason': 'form_changed'}
-            if fields.get('consents'):
+            if fields.get('consents') or fields.get('consentUnresolved'):
                 return {'filled': True, 'submitted': False, 'reason': 'consent_failed'}
             # Chrome's own autofill may overwrite a field after the second click.
             if not self.js('''(()=>{const u=document.querySelector(__USER__),p=document.querySelector(__PASS__);
