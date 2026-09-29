@@ -1,6 +1,6 @@
 ﻿# 电商账单 Windows 打包脚本
 #
-# 在「源码」目录中运行：
+# 在项目根目录中运行：
 #   powershell -ExecutionPolicy Bypass -File .\打包-Windows.ps1
 #
 # 建虚拟环境装依赖 -> PyInstaller 打包 -> 安装自检 -> 编译安装包。
@@ -15,10 +15,8 @@ $ErrorActionPreference = 'Stop'
 function Step($text) { Write-Host "`n=== $text ===" -ForegroundColor Cyan }
 function Fail($text) { Write-Host "失败：$text" -ForegroundColor Red; exit 1 }
 
-$Source = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location $Source
-$Project = Split-Path -Parent $Source
-Write-Host "源码目录：$Source"
+$Project = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $Project
 Write-Host "项目目录：$Project"
 
 # 1. Python 3.12
@@ -33,7 +31,7 @@ Step '检查 Python 3.12'
 # （John Smith 这种很常见）路径里就有空格，cmd 会把路径拆成两截，py 收到的是一个不存在的
 # 文件，报错走 stderr 被丢进 $null，stdout 为空；于是下面的判断认为「没找到 Python」，
 # 脚本在第 49 行停下并显示「未找到 Python 3.12」——**而机器上其实装得好好的**。
-# 现在改为在工作目录（= 源码目录）下建一个纯文件名的临时脚本，命令行里只有文件名，
+# 现在改为在工作目录（= 项目根目录）下建一个纯文件名的临时脚本，命令行里只有文件名，
 # 不含路径也就不可能带空格；用完立刻删掉。
 $probeName = 'commercebill-probe.py'
 $probeFile = Join-Path (Get-Location) $probeName
@@ -66,7 +64,7 @@ if ($arch -ne 'win-amd64') {
 }
 
 # 磁盘空间：PyInstaller 的 onedir 产物与 Inno Setup 的安装包会各占一份，空间不足会在中途失败。
-try { $drive = Get-PSDrive -Name $Source.Substring(0,1) -ErrorAction Stop
+try { $drive = Get-PSDrive -Name $Project.Substring(0,1) -ErrorAction Stop
       if ($drive.Free -lt 3GB) { Fail "磁盘可用空间不足 3GB（当前 $([math]::Round($drive.Free/1GB,1))GB）。打包会在中途失败，请先清理空间。" } } catch { }
 
 # 2. 虚拟环境与依赖

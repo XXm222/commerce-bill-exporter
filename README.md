@@ -1,55 +1,80 @@
-# 电商账单
+# 电商账单导出器
 
-一个基于 PyQt6 的桌面账单导出工具。目前接入聚水潭和天猫：在界面中选择日期、平台与账号，使用本机已安装的 Google Chrome 完成浏览器操作，并将导出结果按平台、店铺整理。聚水潭导出订单商品数据；天猫按整月处理资金管理明细与收支账单。
+**选择日期、平台和店铺，按月导出并整理账单。**
 
-> 当前源码版本为 **0.6.0-dev**。平台页面、账号权限和导出规则会变化；正式使用前请用自己的账号核对导出文件与平台页面。此仓库不包含浏览器、浏览器扩展、运行端、安装包或任何账号与账单数据。
+这是一个 PyQt6 桌面应用，使用电脑上已经安装的 Google Chrome 操作平台页面。目前支持聚水潭和天猫。账号、密码、下载文件和导出记录均留在使用者的电脑上。
 
-## 运行
+> 当前为 `0.6.0-dev` 源码版。平台页面与导出规则可能变化；首次使用时，请将生成文件与平台页面核对。
 
-需要 Python 3.12、Google Chrome 和 PyQt6。浏览器操作使用 [Kimi 浏览器扩展及本机运行端](https://www.kimi.com/help/kimi-webbridge/kimi-webbridge-introduction)；APP 会检查运行环境，缺少时给出安装入口。请按官方说明配置扩展和运行端，在 Chrome 中登录自己的平台账号。
+## 支持范围
 
-macOS 开发环境：
+| 平台 | 导出内容 | 时间规则 | 文件整理 |
+| --- | --- | --- | --- |
+| 聚水潭 | 订单商品数据 | 按所选日期查询；跨月时逐月获取 | 一个 Excel 工作簿，每家店铺一个 Sheet |
+| 天猫 | 聚核算月度明细、收入账单全量明细 | 将所选日期覆盖的月份逐月导出 | 按店铺和月份保存，每个来源一份工作簿 |
+
+聚水潭包含拼多多店铺时，历史商品明细可能受平台近三个月的导出范围限制。应用会保留已导出的文件，并在结果中提示缺失范围。
+
+## 开始使用
+
+1. 安装 **Python 3.12** 和 **Google Chrome**，克隆本仓库。
+2. 按下方命令安装依赖并启动应用。首次启动时，应用会检查浏览器运行环境，并引导安装所需的 [Kimi 浏览器扩展与运行端](https://www.kimi.com/help/kimi-webbridge/kimi-webbridge-introduction)。应用不会附带或另装一份浏览器。
+3. 在应用中添加平台账号或店铺，选择日期与要导出的平台、店铺，然后点击「开始导出」。账号密码可保存在本机；如果平台要求滑块、短信等验证，仍需在 Chrome 中完成。
+
+**macOS**
 
 ```bash
 python3.12 -m venv .venv
-.venv/bin/python -m pip install -r 源码/requirements-build.txt
-.venv/bin/python 源码/app.py
+.venv/bin/python -m pip install -r requirements-build.txt
+.venv/bin/python app.py
 ```
 
-Windows 开发环境：
+**Windows（PowerShell）**
 
 ```powershell
 py -3.12 -m venv .venv
-.venv\Scripts\python.exe -m pip install -r 源码\requirements-build.txt
-.venv\Scripts\python.exe 源码\app.py
+.venv\Scripts\python.exe -m pip install -r requirements-build.txt
+.venv\Scripts\python.exe app.py
 ```
 
-运行自检：
+导出目录由应用界面选择。文件按平台归档；同一平台的不同账号会分开放置，避免同名店铺互相覆盖。
+
+## 构建桌面程序
+
+在仓库根目录构建 macOS 应用：
 
 ```bash
-.venv/bin/python 源码/app.py --self-test self-test.json
+.venv/bin/python -m PyInstaller --noconfirm --clean CommerceBill.spec
 ```
 
-Windows 下将上面的解释器路径替换为 `.venv\Scripts\python.exe`。自检只检查本机环境和程序组件，不能代替真实平台导出验收。
+Windows 请在 PowerShell 中运行：
 
-## 打包
-
-macOS 可在 `源码` 目录运行 `pyinstaller CommerceBill.spec`。Windows 使用 `源码/打包-Windows.ps1`；它会建立虚拟环境、运行 PyInstaller、自检，并在安装了 Inno Setup 6.3+ 时编译安装包。打包脚本和安装配置均在仓库中，生成的二进制文件不纳入 Git。
-
-## 测试
-
-仓库只收录不需要真实账号或账单的离线测试：
-
-```bash
-PYTHONPATH=源码 .venv/bin/python -m unittest discover -s 测试 -p 'test_*.py'
+```powershell
+powershell -ExecutionPolicy Bypass -File .\打包-Windows.ps1
 ```
 
-Windows 可将 `PYTHONPATH=源码` 改为 `$env:PYTHONPATH='源码'`，并使用虚拟环境里的 `python.exe`。
+Windows 脚本会准备虚拟环境、构建程序并运行安装自检。已安装 Inno Setup 6.3 或更高版本时，还会生成 Setup 安装包；否则可使用 `dist/CommerceBill/` 中的程序目录。构建产物不会提交到本仓库。
 
-## 数据与安全
+## 数据与隐私
 
-账号信息保存在用户本机；macOS 密码使用系统钥匙串，Windows 密码使用当前用户的 DPAPI 加密。不要将账号配置、测试店铺清单、导出账单或含真实订单号的日志提交到仓库。Chrome 扩展和本机运行端是独立项目，本仓库不分发其代码或二进制文件。
+- 密码由当前系统用户加密保存：macOS 使用钥匙串，Windows 使用 DPAPI。
+- 本仓库不包含账号配置、真实账单、浏览器扩展、运行端或安装包。
+- 请勿将导出的账单、账号文件或包含真实订单信息的日志提交到 Git。
+
+## 项目结构
+
+```text
+app.py                  桌面界面与程序入口
+engine.py               导出任务、恢复与文件归档
+jst_export.py           聚水潭导出适配
+tmall_export.py          天猫导出适配
+webbridge.py            浏览器操作接口
+environment.py          Chrome 与扩展运行环境检查
+CommerceBill.spec       PyInstaller 构建配置
+打包-Windows.ps1         Windows 构建脚本
+installer.iss           Inno Setup 安装包配置
+```
 
 ## 许可
 
-本项目源码按 **GNU GPL v3.0** 发布。PyQt6 开源版本本身采用 GPL v3；请遵守项目及第三方依赖各自的许可。见 [LICENSE](LICENSE)。
+本项目依据 [GNU GPL v3.0](LICENSE) 发布。第三方组件遵循各自的许可协议。

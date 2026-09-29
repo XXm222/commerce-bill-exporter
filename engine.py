@@ -15,10 +15,7 @@ from workbook import prepare_sheets, source_order_counts, verify_xlsx
 
 PLATFORMS={'jst':'聚水潭','tmall':'天猫'}
 BASE=Path(getattr(sys,'_MEIPASS',Path(__file__).resolve().parent))
-# 这里原本还有一个 CREATE_NO_WINDOW（Windows 上给 subprocess 用的不弹黑框标志），随
-# 「写出工作簿改成本项目自己的流式写入器、不再起 node 子进程」一起成了死代码：engine.py
-# 里已经没有 subprocess 了。2026-09-28 全仓扫描确认它再无引用，已删除——留着会让人以为
-# 这里还有子进程要照顾。测试/test_source_hygiene.py 现在盯着这类残留。
+# 工作簿由进程内的流式写入器生成，不再启动 Node 子进程。
 
 # 退出登录的人工提示。两个平台的页面都没有退出入口（2026-09-27 在真实页面实测：
 # 天猫商家后台整页 27 个链接、0 个悬停目标、0 个含「退出/注销/登出」的元素；
@@ -105,7 +102,7 @@ def check_claim(rows,headers,flow,month,claim,label=''):
         if digits and int(digits) != len(rows):
             raise RuntimeError(f'{flow["name"]}{label}：页面上写的是 {digits} 笔明细，'
                                f'下载到的文件里是 {len(rows)} 行，两者不一致，已停止导出。'
-                               f'请重新下载该月明细；若反复不一致，请用 测试/recon_tmall.py 核对页面结构')
+                               f'请重新下载该月明细；若反复不一致，请核对天猫页面结构')
     income = claim.get('income')
     column = claims.get('incomeColumn')
     if income and column in headers:
@@ -124,7 +121,7 @@ def check_claim(rows,headers,flow,month,claim,label=''):
         if total != wanted:
             raise RuntimeError(f'{flow["name"]}{label}：页面上的{claims["income"]}是 {wanted}，'
                                f'下载到的文件里合计是 {total}，两者不一致，已停止导出。'
-                               f'请重新下载该月明细；若反复不一致，请用 测试/recon_tmall.py 核对页面结构')
+                               f'请重新下载该月明细；若反复不一致，请核对天猫页面结构')
 
 
 def archive(draft,target):

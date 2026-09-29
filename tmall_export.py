@@ -117,7 +117,7 @@ def click_text(browser, label, optional=False, tags=CLICKABLE):
     if optional:
         return False
     if count == 0:
-        raise RuntimeError(f'页面上找不到「{label}」，可能是页面已改版或未登录；请用 测试/recon_tmall.py 核对结构')
+        raise RuntimeError(f'页面上找不到「{label}」，可能是页面已改版或未登录；请核对天猫页面结构')
     raise RuntimeError(f'页面上有 {count} 个「{label}」可点击元素，无法确定点哪一个，请人工核对页面')
 
 
@@ -126,7 +126,7 @@ def first_present(browser, labels):
     for label in labels:
         if has_text(browser, label):
             return label
-    raise RuntimeError(f'页面上找不到任何一个预期标签：{list(labels)}；请用 测试/recon_tmall.py 核对结构')
+    raise RuntimeError(f'页面上找不到任何一个预期标签：{list(labels)}；请核对天猫页面结构')
 
 
 def set_month(browser, flow, month, notify=None):
@@ -142,7 +142,7 @@ def set_month(browser, flow, month, notify=None):
             got = (field.input_value() or '').strip()
             if got != month:
                 raise RuntimeError(f'{flow["name"]}：「{placeholder}」没有接受 {month}'
-                                   f'（读回 {got or "空值"}），请用 测试/recon_tmall.py 核对页面')
+                                   f'（读回 {got or "空值"}），请核对天猫页面')
         if notify:
             notify(f'{flow["name"]}：已设置账单月份 {month}')
         return month
@@ -194,7 +194,7 @@ def _set_range_month(browser, flow, spec, month, notify=None):
         end = (inputs.nth(1).input_value() or '').strip()
         if (start, end) != (month, month):
             raise RuntimeError(f'{flow["name"]}：入账日期没有设成 {month}~{month}'
-                               f'（读回 {start or "空"}~{end or "空"}），请用 测试/recon_tmall.py 核对页面')
+                               f'（读回 {start or "空"}~{end or "空"}），请核对天猫页面')
     if notify:
         notify(f'{flow["name"]}：已设置入账日期 {month}')
     return month
@@ -351,7 +351,7 @@ def missing_row_reason(browser, flow, month):
                else '页面上此刻没有可见的月份单元格（表格按搜索条件过滤，没有数据时本来就是这样）。')
     return (f'；{steps}，这些都成功了，说明页面结构没变，最常见的原因是 {month} **确实没有数据**'
             f'（例如所选日期跨到了这个月，货款收入还没产生）。{visible}'
-            f'若确认该月有数据却仍是这样，请用 测试/recon_tmall.py 核对结构。'
+            f'若确认该月有数据却仍是这样，请核对天猫页面结构。'
             f'已经导好的其它月份不受影响。')
 
 

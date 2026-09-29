@@ -19,8 +19,7 @@ POLL = .5
 CHANGED_HINT = '网站接口模块已变更，需要更新适配器后继续'
 
 # 就绪探测。三种状态：ready（可用）/ changed（登录了但接口模块变了）/ modules=false（登录了但找不到模块编号）。
-# 与 测试/check_jst_adapter.py 共用同一份代码：工具里不再抄一遍等价实现，
-# 否则工具说「没问题」而驱动失败时，无法判断是页面变了还是两份判断不一致。
+# 就绪探测与导出使用同一份页面判定，避免两套判断出现分歧。
 READY_JS = '''(()=>{
     if(location.origin !== 'https://ss.erp321.com') return JSON.stringify({ready:false});
     const chunks=window.webpackChunkshengsuan;
