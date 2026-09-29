@@ -1,0 +1,29 @@
+{
+  "datePolicy": "whole_months_covering_requested_dates",
+  "sources": [
+    {
+      "name": "聚核算月度明细",
+      "url": "https://myseller.taobao.com/home.htm/whale-accountant/pay/capital/home?active=fund_detail",
+      "entryFallback": "收支记录",
+      "tab": "月汇总",
+      "downloadAction": "下载明细"
+    },
+    {
+      "name": "收支账单收入全量明细",
+      "url": "https://myseller.taobao.com/home.htm/whale-accountant/bill/summary?billDirection=income&billType=month",
+      "tab": "收入账单/月汇总",
+      "billType": "货款收入",
+      "downloadAction": "下载全量明细"
+    }
+  ],
+  "liveDownloadVerified": true,
+  "verified": {
+    "at": "2026-09-27",
+    "how": "在两个入口的真实登录态下完成下载，并用页面自报的笔数、以及产出工作簿与原始明细的守恒核对交叉验证。",
+    "evidence": {
+      "收支账单收入全量明细 2026-08": "22 列 2974 行，与页面「流水笔数 2974」一致；10 个数字列合计分毫不差；长数字含 28 位业务流水号 2974 个逐字保留",
+      "聚核算月度明细 2026-08": "14 列 953 行，与页面「明细笔数 953」一致；6 个数字列合计分毫不差"
+    },
+    "note": "本文件不被代码读取，也不打进安装包；它记录的是用户提供的入口与对应的核实结果。入口地址另在 tmall_export.FLOWS 中硬编码。"
+  }
+}
