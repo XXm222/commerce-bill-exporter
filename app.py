@@ -8,7 +8,7 @@ from accounts import Store, atomic, crypt, load_json, STARTUP_PROBLEMS
 import environment
 from engine import Engine, PLATFORMS, validate_dates, export_period, next_same_platform, BASE, readable_error
 
-VERSION='0.6.0-dev'
+VERSION='0.6.1'
 DATA=(Path.home()/'Library/Application Support/CommerceBillExport/Desktop' if sys.platform=='darwin' else Path(os.environ.get('LOCALAPPDATA',Path.home()))/'CommerceBillExport')
 CHECKED=Qt.CheckState.Checked;UNCHECKED=Qt.CheckState.Unchecked;USER=Qt.ItemDataRole.UserRole
 STYLE='''
@@ -561,6 +561,7 @@ class App(QMainWindow):
     def settings(self):
         if self.busy:return
         dialog=QDialog(self);dialog.setWindowTitle('设置');dialog.setMinimumWidth(500);layout=QVBoxLayout(dialog);layout.setContentsMargins(24,24,24,24);layout.setSpacing(16)
+        layout.addWidget(label(f'电商账单 · 版本 {VERSION}','Muted'))
         # 运行环境放最上面：缺组件时这是最需要看到的一条，也是这里唯一能采取动作的地方。
         layout.addWidget(label('浏览器运行环境','Section'));environment_row=QHBoxLayout();environment_row.setSpacing(10)
         self.settings_status=label('','Muted');self.settings_status.setWordWrap(True);environment_row.addWidget(self.settings_status,1)

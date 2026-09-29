@@ -315,49 +315,103 @@ class Chrome:
             button:buttons.length===1?path(buttons[0]):'',consents,
             consentUnresolved:agreementVisible&&!consentInputs.length&&!roleBoxes.length};})()''') or {}
 
-    def _type_login_field(self, selector, value):
-        # Focus emulation lets trusted keyboard input reach this Chrome tab
-        # without launching a second browser or replacing the user's profile.
-        field_value='''(()=>{const e=document.querySelector(__SEL__);
-          return e?e.value:null})()'''.replace('__SEL__', json.dumps(selector))
-        readback='''(()=>{const e=document.querySelector(__SEL__);
-          return !!e&&e.value===__VALUE__})()'''.replace('__SEL__', json.dumps(selector)) \
-                    .replace('__VALUE__', json.dumps(value, ensure_ascii=False))
-        for _ in range(5):
-            self._mouse_click(selector, manage_focus=False)
-            # Clicking a login input can make Chrome restore a saved account
-            # and password after the click returns.  Wait for that fill to
-            # settle before selecting text, or it can erase our selection.
-            last=object()
-            changed_at=time.monotonic()
-            deadline=time.monotonic()+5
-            while time.monotonic()<deadline:
-                current=self.js(field_value)
-                if current is None:
+    def _login_field_state(self, selector, value):
+        # Never return a password from the page, even for failure diagnostics.
+        return self.js('''(([selector,value])=>{const e=document.querySelector(selector);
+          if(!e)return {exists:false};return {exists:true,type:e.type,
+            editable:!!e.getClientRects().length&&!e.disabled&&!e.readOnly,
+            length:e.value.length,maxLength:e.maxLength,
+            focused:document.activeElement===e,matches:e.value===value};})(__ARGS__)'''
+            .replace('__ARGS__', json.dumps([selector, value], ensure_ascii=False))) or {}
+
+    def _type_login_field(self, selector, value, field=None):
+        """Replace one field, retrying rerenders without ever submitting a form."""
+        self.login_input_issue = {'field': field or 'input', 'code': 'input_failed'}
+        expected_length = len(value.encode('utf-16-le')) // 2
+        for attempt in range(1, 6):
+            self.login_input_issue['attempt'] = attempt
+            if field:
+                suffix = {'tmall': 'taobao.com', 'jst': 'erp321.com'}.get(self.account.get('platform'))
+                host = str(self.js('location.hostname') or '').lower()
+                if suffix and host != suffix and not host.endswith('.' + suffix):
+                    self.login_input_issue['code'] = 'unsafe_host'
                     return False
-                now=time.monotonic()
-                if current!=last:
-                    last=current
-                    changed_at=now
-                if now-changed_at>=.8:
-                    break
-                time.sleep(.15)
-            selected=self.js('''(()=>{const e=document.querySelector(__SEL__);if(!e)return false;
-              e.focus();e.select();return document.activeElement===e&&
-                e.selectionStart===0&&e.selectionEnd===e.value.length})()'''
-                .replace('__SEL__', json.dumps(selector)))
-            if selected is not True:
-                return False
-            self.call('key_type', {'text': value, 'delay': 90})
-            # React and Chrome autofill may update the field after typing.
-            # Require the exact value to survive a short settling window.
-            if self.wait(lambda: self.js(readback) is True, timeout=2, interval=.1):
+                fields = self._login_fields()
+                if not fields.get('found'):
+                    self.login_input_issue['code'] = 'field_changed'
+                    time.sleep(.35)
+                    continue
+                selector = fields[field]
+            try:
+                state = self._login_field_state(selector, value)
+                if not state.get('exists') or not state.get('editable'):
+                    self.login_input_issue['code'] = 'field_changed'
+                    time.sleep(.35)
+                    continue
+                if state.get('maxLength', -1) >= 0 and expected_length > state['maxLength']:
+                    self.login_input_issue['code'] = 'field_length_limit'
+                    return False  # Never truncate a saved credential to make it fit.
+                self._mouse_click(selector, manage_focus=False)
+                last = None
+                changed_at = time.monotonic()
+                deadline = changed_at + 5
+                settled = False
+                while time.monotonic() < deadline:
+                    state = self._login_field_state(selector, value)
+                    if not state.get('exists'):
+                        break
+                    signature = (state.get('length'), state.get('matches'), state.get('focused'))
+                    now = time.monotonic()
+                    if signature != last:
+                        last, changed_at = signature, now
+                    if now - changed_at >= .8:
+                        settled = True
+                        break
+                    time.sleep(.15)
+                if not settled:
+                    self.login_input_issue['code'] = 'field_unstable'
+                    continue
+                # Activation must happen BEFORE select(), never between selection
+                # and typing: browser activation can restore autofill/focus.
+                self.activate()
+                selected = self.js('''(([selector,kind])=>{const e=document.querySelector(selector);
+                  if(!e||!e.isConnected||e.disabled||e.readOnly||!e.getClientRects().length||
+                    (kind==='password'&&e.type!=='password'))return 'field_changed';
+                  e.focus();e.select();
+                  if(document.activeElement!==e)return 'focus_lost';
+                  return e.selectionStart===0&&e.selectionEnd===e.value.length||
+                    e.type==='email'&&e.selectionStart===null ? 'ready':'selection_failed';
+                })(__ARGS__)'''.replace('__ARGS__', json.dumps([selector, field])))
+                if selected != 'ready':
+                    self.login_input_issue['code'] = selected if selected in {
+                        'field_changed', 'focus_lost', 'selection_failed'} else 'selection_failed'
+                    time.sleep(.35)
+                    continue
+                if attempt <= 2:
+                    # Use the transport directly to avoid call() activating again.
+                    reply = self._send('key_type', {'text': value, 'delay': 90}, 120)
+                    if not reply.get('ok'):
+                        raise RuntimeError('trusted input failed')
+                else:
+                    # Browser-native text insertion handles layouts/IME differences;
+                    # the same exact-value checks still guard the login submission.
+                    self.call('cdp', {'method': 'Input.insertText', 'params': {'text': value}})
+                matched = self.wait(lambda: self._login_field_state(selector, value).get('matches'),
+                                    timeout=2, interval=.1)
                 time.sleep(.6)
-                if self.js(readback) is True:
+                state = self._login_field_state(selector, value)
+                if matched and state.get('matches'):
+                    self.login_input_issue = {}
                     return True
+                code = ('field_changed' if not state.get('exists') else
+                        'focus_lost' if not state.get('focused') else
+                        'input_overwritten' if matched else
+                        'input_truncated' if state.get('length', 0) < expected_length else 'input_mismatch')
+                self.login_input_issue['code'] = code
+            except RuntimeError:
+                # Transport exceptions may include request data. Never surface them.
+                self.login_input_issue['code'] = 'input_transport'
             time.sleep(.35)
-            # Readback differs; select-all makes replacement safe even if
-            # only part of the previous key sequence reached the page.
         return False
 
     def autofill(self, username, password):
@@ -376,12 +430,17 @@ class Chrome:
         self.call('cdp', {'method': 'Emulation.setFocusEmulationEnabled',
                           'params': {'enabled': True}})
         try:
-            if not self._type_login_field(fields['user'], username):
-                return {'filled': False, 'submitted': False, 'reason': 'user_rejected'}
+            if not self._type_login_field(fields['user'], username, field='user'):
+                return {'filled': False, 'submitted': False, 'reason': 'user_rejected',
+                        'diagnostic': self.login_input_issue}
             # Close Chrome's credential suggestion before clicking password.
             self.key_escape()
-            if not self._type_login_field(fields['password'], password):
-                return {'filled': False, 'submitted': False, 'reason': 'password_not_retained'}
+            if not self._type_login_field(fields['password'], password, field='password'):
+                return {'filled': False, 'submitted': False, 'reason': 'password_not_retained',
+                        'diagnostic': self.login_input_issue}
+            fields = self._login_fields()
+            if not fields.get('found'):
+                return {'filled': True, 'submitted': False, 'reason': 'form_changed'}
             # Login agreements are part of the requested automatic sign-in.
             # Click the visible label with trusted input, then verify the actual
             # checkbox state before submitting.  An unchecked box must never

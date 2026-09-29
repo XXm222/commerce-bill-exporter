@@ -368,6 +368,22 @@ class Engine:
                         }
                         detail=(failure.get(filled.get('reason'),'提交后未确认登录成功')
                                 if not filled['submitted'] else '提交后未确认登录成功')
+                        diagnostic = filled.get('diagnostic') or {}
+                        input_failures = {
+                            'field_changed': '登录输入框已刷新或不可编辑',
+                            'field_length_limit': '保存内容超过网页输入框长度限制，未截断、未提交',
+                            'field_unstable': '浏览器自动填充或页面持续修改输入框',
+                            'focus_lost': '输入焦点被其他控件或浏览器弹层移走',
+                            'selection_failed': '未能全选输入框原有内容，未提交',
+                            'input_overwritten': '输入后内容又被浏览器或页面覆盖',
+                            'input_truncated': '输入未完整送达或被网页截短',
+                            'input_mismatch': '输入结果与保存内容不一致',
+                            'input_transport': '浏览器输入通道失败，请在设置中检查运行端和扩展',
+                            'unsafe_host': '登录页已跳转，停止输入账号密码',
+                        }
+                        if not filled['submitted'] and diagnostic.get('code') in input_failures:
+                            field_name = '密码框' if diagnostic.get('field') == 'password' else '账号框'
+                            detail = field_name + '：' + input_failures[diagnostic['code']]
                         raise RuntimeError(f'「{account["name"]}」自动登录未完成：{detail}。已停止，避免把账单归到错误店铺')
                     self.ask(f'该店铺没有保存完整的账号密码，请在 Chrome 登录「{account["name"]}」。'
                              '登录完成后点「已登录，继续」。',account['name'])
