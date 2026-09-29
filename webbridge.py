@@ -318,22 +318,46 @@ class Chrome:
     def _type_login_field(self, selector, value):
         # Focus emulation lets trusted keyboard input reach this Chrome tab
         # without launching a second browser or replacing the user's profile.
+        field_value='''(()=>{const e=document.querySelector(__SEL__);
+          return e?e.value:null})()'''.replace('__SEL__', json.dumps(selector))
         readback='''(()=>{const e=document.querySelector(__SEL__);
           return !!e&&e.value===__VALUE__})()'''.replace('__SEL__', json.dumps(selector)) \
                     .replace('__VALUE__', json.dumps(value, ensure_ascii=False))
-        for _ in range(2):
+        for _ in range(5):
             self._mouse_click(selector, manage_focus=False)
+            # Clicking a login input can make Chrome restore a saved account
+            # and password after the click returns.  Wait for that fill to
+            # settle before selecting text, or it can erase our selection.
+            last=object()
+            changed_at=time.monotonic()
+            deadline=time.monotonic()+5
+            while time.monotonic()<deadline:
+                current=self.js(field_value)
+                if current is None:
+                    return False
+                now=time.monotonic()
+                if current!=last:
+                    last=current
+                    changed_at=now
+                if now-changed_at>=.8:
+                    break
+                time.sleep(.15)
             selected=self.js('''(()=>{const e=document.querySelector(__SEL__);if(!e)return false;
-              e.focus();e.select();return true})()'''.replace('__SEL__', json.dumps(selector)))
+              e.focus();e.select();return document.activeElement===e&&
+                e.selectionStart===0&&e.selectionEnd===e.value.length})()'''
+                .replace('__SEL__', json.dumps(selector)))
             if selected is not True:
                 return False
-            self.call('key_type', {'text': value, 'delay': 65})
-            # The login page updates React-controlled inputs asynchronously.
-            # A single immediate read used to misreport this as a bad password.
-            if self.wait(lambda: self.js(readback) is True, timeout=1.5, interval=.1):
-                return True
-            # Readback is known to differ; select-all makes one replacement
-            # attempt safe even when part of the first key sequence arrived.
+            self.call('key_type', {'text': value, 'delay': 90})
+            # React and Chrome autofill may update the field after typing.
+            # Require the exact value to survive a short settling window.
+            if self.wait(lambda: self.js(readback) is True, timeout=2, interval=.1):
+                time.sleep(.6)
+                if self.js(readback) is True:
+                    return True
+            time.sleep(.35)
+            # Readback differs; select-all makes replacement safe even if
+            # only part of the previous key sequence reached the page.
         return False
 
     def autofill(self, username, password):
@@ -354,6 +378,8 @@ class Chrome:
         try:
             if not self._type_login_field(fields['user'], username):
                 return {'filled': False, 'submitted': False, 'reason': 'user_rejected'}
+            # Close Chrome's credential suggestion before clicking password.
+            self.key_escape()
             if not self._type_login_field(fields['password'], password):
                 return {'filled': False, 'submitted': False, 'reason': 'password_not_retained'}
             # Login agreements are part of the requested automatic sign-in.
