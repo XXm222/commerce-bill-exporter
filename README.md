@@ -1,5 +1,11 @@
 # 电商账单导出器
 
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](#开始使用)
+[![支持平台](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-%E8%81%9A%E6%B0%B4%E6%BD%AD%20%7C%20%E5%A4%A9%E7%8C%AB-8B5CF6?style=flat-square)](#支持范围)
+[![桌面系统](https://img.shields.io/badge/Desktop-macOS%20%7C%20Windows-0F766E?style=flat-square)](#构建桌面程序)
+[![开发状态](https://img.shields.io/badge/%E7%8A%B6%E6%80%81-%E5%BC%80%E5%8F%91%E9%A2%84%E8%A7%88-F59E0B?style=flat-square)](#开始使用)
+[![GPL v3](https://img.shields.io/badge/License-GPL--3.0-2E7D32?style=flat-square)](LICENSE)
+
 **选择日期、平台和店铺，按月导出并整理账单。**
 
 这是一个 PyQt6 桌面应用，使用电脑上已经安装的 Google Chrome 操作平台页面。目前支持聚水潭和天猫。账号、密码、下载文件和导出记录均留在使用者的电脑上。
