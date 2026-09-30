@@ -326,10 +326,18 @@ class Chrome:
 
     def _type_login_field(self, selector, value, field=None):
         """Replace one field, retrying rerenders without ever submitting a form."""
-        self.login_input_issue = {'field': field or 'input', 'code': 'input_failed'}
         expected_length = len(value.encode('utf-16-le')) // 2
+        self.login_input_issue = {'field': field or 'input', 'code': 'input_failed',
+                                  'expectedLength': expected_length}
         for attempt in range(1, 6):
             self.login_input_issue['attempt'] = attempt
+            # Real Taobao login accepts native field replacement. Prefer it for
+            # passwords so OS keyboard/IME and selection races are not the default.
+            methods = (('field_fill', 'field_fill', 'browser_text', 'keyboard', 'keyboard')
+                       if field == 'password' else
+                       ('keyboard', 'keyboard', 'browser_text', 'field_fill', 'field_fill'))
+            method = methods[attempt - 1]
+            self.login_input_issue['method'] = method
             if field:
                 suffix = {'tmall': 'taobao.com', 'jst': 'erp321.com'}.get(self.account.get('platform'))
                 host = str(self.js('location.hostname') or '').lower()
@@ -344,6 +352,8 @@ class Chrome:
                 selector = fields[field]
             try:
                 state = self._login_field_state(selector, value)
+                self.login_input_issue.update(actualLength=state.get('length'),
+                                              focused=bool(state.get('focused')))
                 if not state.get('exists') or not state.get('editable'):
                     self.login_input_issue['code'] = 'field_changed'
                     time.sleep(.35)
@@ -382,24 +392,31 @@ class Chrome:
                   return e.selectionStart===0&&e.selectionEnd===e.value.length||
                     e.type==='email'&&e.selectionStart===null ? 'ready':'selection_failed';
                 })(__ARGS__)'''.replace('__ARGS__', json.dumps([selector, field])))
-                if selected != 'ready':
+                if selected != 'ready' and not (method == 'field_fill' and selected == 'selection_failed'):
                     self.login_input_issue['code'] = selected if selected in {
                         'field_changed', 'focus_lost', 'selection_failed'} else 'selection_failed'
                     time.sleep(.35)
                     continue
-                if attempt <= 2:
+                if method == 'keyboard':
                     # Use the transport directly to avoid call() activating again.
                     reply = self._send('key_type', {'text': value, 'delay': 90}, 120)
                     if not reply.get('ok'):
                         raise RuntimeError('trusted input failed')
-                else:
+                elif method == 'browser_text':
                     # Browser-native text insertion handles layouts/IME differences;
                     # the same exact-value checks still guard the login submission.
                     self.call('cdp', {'method': 'Input.insertText', 'params': {'text': value}})
+                else:
+                    # Replace the identified input directly and fire input/change
+                    # events. This does not depend on OS keyboard delivery or on
+                    # the selection remaining intact while a request is in flight.
+                    self.call('fill', {'selector': selector, 'value': value})
                 matched = self.wait(lambda: self._login_field_state(selector, value).get('matches'),
                                     timeout=2, interval=.1)
                 time.sleep(.6)
                 state = self._login_field_state(selector, value)
+                self.login_input_issue.update(actualLength=state.get('length'),
+                                              focused=bool(state.get('focused')))
                 if matched and state.get('matches'):
                     self.login_input_issue = {}
                     return True
@@ -416,6 +433,10 @@ class Chrome:
 
     def autofill(self, username, password):
         """Type saved credentials, accept required login terms and submit."""
+        # HTML password inputs remove CR/LF. Match that browser rule for values
+        # pasted into saved credentials, while preserving all spaces and other
+        # characters. The encrypted stored record is left intact.
+        password = password.replace('\r', '').replace('\n', '')
         if not username or not password:
             return {'filled': False, 'submitted': False, 'reason': 'missing_credentials'}
         trusted_hosts = {'tmall': 'taobao.com', 'jst': 'erp321.com'}

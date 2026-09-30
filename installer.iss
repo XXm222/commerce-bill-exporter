@@ -16,7 +16,7 @@
 [Setup]
 AppId={{230E4CC8-C55D-463E-9B9B-4FA7DE44FD18}
 AppName=电商账单
-AppVersion=0.6.1
+AppVersion=0.6.2
 AppPublisher=电商账单
 DefaultDirName={localappdata}\Programs\CommerceBill
 DefaultGroupName=电商账单
@@ -26,7 +26,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 OutputDir=installer
-OutputBaseFilename=CommerceBill_Windows_x64_0.6.1_Setup
+OutputBaseFilename=CommerceBill_Windows_x64_0.6.2_Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

@@ -384,6 +384,11 @@ class Engine:
                         if not filled['submitted'] and diagnostic.get('code') in input_failures:
                             field_name = '密码框' if diagnostic.get('field') == 'password' else '账号框'
                             detail = field_name + '：' + input_failures[diagnostic['code']]
+                            expected, actual = diagnostic.get('expectedLength'), diagnostic.get('actualLength')
+                            method = {'keyboard':'逐字输入', 'browser_text':'浏览器文本输入',
+                                      'field_fill':'控件直接填写'}.get(diagnostic.get('method'))
+                            if (type(expected) is int and type(actual) is int and method):
+                                detail += f'（预期 {expected} 字符，读回 {actual} 字符；{method}）'
                         raise RuntimeError(f'「{account["name"]}」自动登录未完成：{detail}。已停止，避免把账单归到错误店铺')
                     self.ask(f'该店铺没有保存完整的账号密码，请在 Chrome 登录「{account["name"]}」。'
                              '登录完成后点「已登录，继续」。',account['name'])
