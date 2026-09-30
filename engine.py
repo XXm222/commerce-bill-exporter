@@ -27,6 +27,12 @@ LOGOUT_HINTS={
     'tmall':'天猫商家后台没有退出入口（已在真实页面核实）。请在 Chrome 里打开 taobao.com 从账号菜单退出，完成后点「已退出，继续」。APP 会核对退出状态；只用一个店铺时也可以不退出，登录态会保留，下次导出无需重新登录。',
 }
 
+def same_shop_name(expected, actual):
+    """店铺名忽略首尾空白和字母大小写，仍要求完整名称一致。"""
+    expected = str(expected or '').strip().casefold()
+    actual = str(actual or '').strip().casefold()
+    return bool(expected and actual and expected == actual)
+
 def session_already_open(browser):
     """判断浏览器里是否已经登着某个天猫账号。
 
@@ -321,7 +327,7 @@ class Engine:
                     return None
             state=browser.wait(shop_or_login,15) or ''
             shop='' if state=='login' else state
-            if shop != account['name']:
+            if not same_shop_name(account['name'], shop):
                 if shop:
                     # A known different shop must be logged out before typing
                     # the next account's credentials into the same Chrome.
@@ -350,7 +356,7 @@ class Engine:
                     if browser.wait(login_left,45):
                         browser.open_url(tmall.FLOWS['bill_income']['url'])
                         shop=browser.wait(browser.current_shop,15) or ''
-                if shop and shop != account['name']:
+                if shop and not same_shop_name(account['name'], shop):
                     raise RuntimeError(f'天猫店铺未核对通过：期望「{account["name"]}」，页面读到「{shop}」。已停止，避免账单归错店铺')
                 if not shop:
                     if saved_credentials:
@@ -394,7 +400,7 @@ class Engine:
                              '登录完成后点「已登录，继续」。',account['name'])
                     browser.open_url(tmall.FLOWS['bill_income']['url'])
                     shop=browser.wait(browser.current_shop,15) or ''
-            if shop != account['name']:
+            if not same_shop_name(account['name'], shop):
                 raise RuntimeError(f'天猫店铺未核对通过：期望「{account["name"]}」，页面读到「{shop or "空"}」。已停止，避免账单归错店铺')
             return browser,None,None
         adapter=jst.Browser(browser.rpc)

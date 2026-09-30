@@ -8,7 +8,7 @@ from accounts import Store, atomic, crypt, load_json, STARTUP_PROBLEMS
 import environment
 from engine import Engine, PLATFORMS, validate_dates, export_period, next_same_platform, BASE, readable_error
 
-VERSION='0.6.2'
+VERSION='0.6.3'
 DATA=(Path.home()/'Library/Application Support/CommerceBillExport/Desktop' if sys.platform=='darwin' else Path(os.environ.get('LOCALAPPDATA',Path.home()))/'CommerceBillExport')
 CHECKED=Qt.CheckState.Checked;UNCHECKED=Qt.CheckState.Unchecked;USER=Qt.ItemDataRole.UserRole
 STYLE='''
