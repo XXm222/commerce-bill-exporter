@@ -524,7 +524,7 @@ class Engine:
         finally:
             if self.browser:self.browser.close()
             self.browser=None
-    def create(self,account,start,end,output,all_shops,selected):
+    def create(self,account,start,end,output,all_shops,selected,*,include_alipay=False):
         period=export_period(account['platform'],start,end)
         if account['platform']!='jst' and not period['months']:raise ValueError('天猫任务缺少账单月份')
         if account['platform']=='jst' and not all_shops and not selected:raise ValueError(f"{account['name']}：请至少选择一家店铺")
@@ -532,6 +532,7 @@ class Engine:
         task={'id':uuid.uuid4().hex,'accountId':account['id'],'accountName':account['name'],
               'platform':account['platform'],'start':period['start'],'end':period['end'],'requestedStart':start,'requestedEnd':end,'billingMonths':period['months'],'dateField':'send_date',
               'allShops':all_shops,'selectedShops':[str(x) for x in selected],
+              'includeAlipay':bool(include_alipay and account['platform']=='tmall'),
               'output':str(output),'createdAt':dt.datetime.now().isoformat(timespec='seconds'),
               'status':'queued','stage':'等待导出','rows':0,'sheetCount':0,'orderCount':0}
         self.tasks.insert(0,task);self.save();return task
@@ -738,7 +739,7 @@ class Engine:
                 except Exception:browser.close()
             self.browser=None
     def execute_tmall(self,task,account,next_account=False):
-        """天猫：逐月、逐来源下载明细，每个「来源+月份」产出一个单 Sheet 工作簿。
+        """天猫：逐月、按所选来源下载；支付宝仅主账号可选，生成明细与汇总两张 Sheet。
 
         实测两个报表都不含店铺列，因此不按店铺分 Sheet（2026-09-27 用户确认：
         一个账号 + 一个月度明细 = 一个工作簿、单 Sheet）。
@@ -746,6 +747,15 @@ class Engine:
         folder=self.data/'tasks'/task['id'];folder.mkdir(parents=True,exist_ok=True)
         months=task.get('billingMonths') or []
         if not months:raise RuntimeError('天猫任务缺少账单月份')
+        # 支付宝是显式选项。旧任务未记录选择时，继续原有两个天猫来源。
+        username=str(account.get('username','')).strip()
+        main_account=bool(username) and not any(mark in username for mark in (':','：'))
+        include_alipay=bool(task.get('includeAlipay',False))
+        flows=[key for key in tmall.FLOWS if key!='alipay_month' or (include_alipay and main_account)]
+        warning=('支付宝月资金账单仅主账号有权限，当前为子账号或未填写账号，已跳过此项；其他天猫账单照常导出。'
+                 if include_alipay and not main_account else None)
+        self.update(task,warning=warning)
+        if warning:self.notify('warning',f"{account['name']}：{warning}")
         browser=None
         try:
             # 断点续跑：只要每个来源每个月都已有原始文件，就不必再登录下载。
@@ -753,7 +763,7 @@ class Engine:
             # 工作簿草稿，用前缀 glob 取「已下载文件」会取到中间产物（字母序里 .jsonl 排最前），
             # 续跑会以「不支持的明细文件类型」失败。
             source_dir=folder/'source';source_dir.mkdir(parents=True,exist_ok=True)
-            needed=[(key,month) for month in months for key in tmall.FLOWS]
+            needed=[(key,month) for month in months for key in flows]
             missing=[(key,month) for key,month in needed if not cached_sources(source_dir,key,month)]
             if missing:
                 self.update(task,status='running',stage=f"登录：{account['name']}",error=None)
@@ -766,7 +776,7 @@ class Engine:
             downloaded={}   # (key,month)->path
             claims={}       # (key,month)->页面声明数字（明细笔数/收入金额）
             if missing:
-                for key in tmall.FLOWS:
+                for key in flows:
                     self.checkpoint()
                     flow=dict(tmall.FLOWS[key],key=key)
                     needed=[m for m in months if not cached_sources(source_dir,key,m)]
@@ -781,7 +791,7 @@ class Engine:
                             claims[(key,m)]=claim
             # Phase 2: 逐月整理归档。该月没下载到原始文件（无数据/已跳过）就不出工作簿。
             for month in months:
-                for key in tmall.FLOWS:
+                for key in flows:
                     self.checkpoint()
                     flow=dict(tmall.FLOWS[key],key=key)
                     cached=cached_sources(source_dir,key,month)

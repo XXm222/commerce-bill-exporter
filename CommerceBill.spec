@@ -36,8 +36,8 @@ if sys.platform == 'darwin':
         info_plist={
             'CFBundleName': '电商账单',
             'CFBundleDisplayName': '电商账单',
-            'CFBundleShortVersionString': '0.6.4',
-            'CFBundleVersion': '0.6.4',
+            'CFBundleShortVersionString': '0.6.5',
+            'CFBundleVersion': '0.6.5',
             'LSMinimumSystemVersion': '11.0',
             'NSHighResolutionCapable': True,
         },

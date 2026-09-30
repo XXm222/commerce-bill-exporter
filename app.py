@@ -8,7 +8,7 @@ from accounts import Store, atomic, crypt, load_json, STARTUP_PROBLEMS
 import environment
 from engine import Engine, PLATFORMS, validate_dates, export_period, next_same_platform, BASE, readable_error
 
-VERSION='0.6.4'
+VERSION='0.6.5'
 DATA=(Path.home()/'Library/Application Support/CommerceBillExport/Desktop' if sys.platform=='darwin' else Path(os.environ.get('LOCALAPPDATA',Path.home()))/'CommerceBillExport')
 CHECKED=Qt.CheckState.Checked;UNCHECKED=Qt.CheckState.Unchecked;USER=Qt.ItemDataRole.UserRole
 STYLE='''
@@ -183,7 +183,7 @@ class App(QMainWindow):
         self.store=Store(self.data);self.events=queue.Queue();self.busy=False;self.pending=None;self.current=None;self.platform='jst';self.export_progress=None
         self.engine=Engine(self.data,self.store,self.notify,self.ask,self.config.get('chrome',''))
         self.enabled={p:self.config.get('platforms',{}).get(p,p=='jst') for p in PLATFORMS}
-        self.setWindowTitle('电商账单');self.resize(1120,830);self.setMinimumSize(940,710)
+        self.setWindowTitle('电商账单');self.resize(1120,830);self.setMinimumSize(940,830)
         self.setStyleSheet(STYLE)
         central=QWidget();self.setCentralWidget(central);layout=QVBoxLayout(central);layout.setContentsMargins(28,22,28,22);layout.setSpacing(12)
         heading=QHBoxLayout();titles=QVBoxLayout();titles.setSpacing(5);titles.addWidget(label('电商账单','Title'));titles.addWidget(label('按月导出，按店铺整理。','Muted'));heading.addLayout(titles);heading.addStretch();heading.addWidget(button('设置',self.settings,'Quiet'));layout.addLayout(heading)
@@ -222,6 +222,9 @@ class App(QMainWindow):
         selection_frame,selection_layout=panel();selection_heading=QHBoxLayout();self.selection_title=label('聚水潭登录账号','Section');selection_heading.addWidget(self.selection_title);selection_heading.addStretch();self.add_button=button('添加账号',lambda:self.edit_account(),'Quiet');selection_heading.addWidget(self.add_button);self.more_button=button('更多',lambda:None,'Quiet');menu=QMenu(self.more_button);menu.addAction('编辑登录信息',lambda:self.edit_account(self.current));menu.addAction('删除记录',self.delete_account);self.more_button.setMenu(menu);selection_heading.addWidget(self.more_button);selection_layout.addLayout(selection_heading)
         self.jst_note=label('默认导出全部店铺的订单商品数据，按店铺分 Sheet。','Muted');self.jst_note.setWordWrap(True);selection_layout.addWidget(self.jst_note)
         self.shop_options=QWidget();options=QHBoxLayout(self.shop_options);options.setContentsMargins(0,0,0,0);self.all_shops=QCheckBox('全选店铺');self.all_shops.toggled.connect(self.toggle_all);options.addWidget(self.all_shops);self.count=label('','Muted');options.addWidget(self.count);options.addStretch();self.search=QLineEdit();self.search.setPlaceholderText('搜索店铺名称');self.search.setClearButtonEnabled(True);self.search.setMaximumWidth(300);self.search.textChanged.connect(self.render_accounts);options.addWidget(self.search);selection_layout.addWidget(self.shop_options)
+        self.alipay_options=QWidget();alipay_row=QVBoxLayout(self.alipay_options);alipay_row.setContentsMargins(0,0,0,0);alipay_row.setSpacing(4)
+        self.alipay_check=QCheckBox('同时导出支付宝月资金账单（仅主账号）');self.alipay_check.setChecked(bool(self.config.get('includeAlipay',False)));self.alipay_check.toggled.connect(self.save_settings);alipay_row.addWidget(self.alipay_check)
+        alipay_note=label('主账号没有冒号；子账号无权限，将跳过此项，继续导出其他账单。','Muted');alipay_note.setWordWrap(True);alipay_row.addWidget(alipay_note);selection_layout.addWidget(self.alipay_options)
         self.accounts=QListWidget();self.accounts.setAccessibleName('聚水潭登录账号');self.accounts.currentItemChanged.connect(self.account_selected);self.accounts.itemChanged.connect(self.account_check)
         self.accounts_stack=QStackedWidget();self.accounts_stack.setMinimumHeight(112);self.accounts_stack.addWidget(self.accounts);self.account_empty=empty('添加聚水潭登录账号','可保存登录信息；需要验证时在 Chrome 完成登录。');self.accounts_stack.addWidget(self.account_empty);selection_layout.addWidget(self.accounts_stack,1)
         selection_footer=QHBoxLayout();self.hint=label('账号密码加密保存在本机。','Muted');self.hint.setWordWrap(True);selection_footer.addWidget(self.hint,1);self.sync_button=button('检查登录',self.sync);selection_footer.addWidget(self.sync_button);selection_layout.addLayout(selection_footer);body.addWidget(selection_frame,1);layout.addLayout(body,1)
@@ -276,7 +279,7 @@ class App(QMainWindow):
                     if self.export_progress and self.export_progress.running:self.export_progress.finish(self.engine.cancelled)
         except queue.Empty:pass
     def set_busy(self,busy):
-        for w in (*self.platform_buttons.values(),*self.platform_checks.values(),self.accounts,self.all_shops,self.start,self.end,self.month_range_button,self.this_month_button,self.month_button,self.search,self.add_button,self.more_button,self.output,self.run_button):w.setEnabled(not busy)
+        for w in (*self.platform_buttons.values(),*self.platform_checks.values(),self.accounts,self.all_shops,self.alipay_check,self.start,self.end,self.month_range_button,self.this_month_button,self.month_button,self.search,self.add_button,self.more_button,self.output,self.run_button):w.setEnabled(not busy)
         self.progress.setVisible(busy);self.stop_button.setVisible(busy);self.sync_button.setEnabled(not busy and bool(self.selected()));self.history_actions()
     def check_environment(self):
         """后台探一次运行环境：probe 有超时、最坏几秒，不能卡在界面线程里。"""
@@ -393,7 +396,7 @@ class App(QMainWindow):
     def render_accounts(self,select_id=None):
         keep=select_id if isinstance(select_id,str) and any(a['id']==select_id for a in self.store.items) else self.current;self.accounts.blockSignals(True);self.accounts.clear();chosen=None
         jst=self.platform=='jst';name=PLATFORMS[self.platform];rows=[a for a in self.store.items if a['platform']==self.platform];search=self.search.text().strip().casefold() if not jst else ''
-        self.selection_title.setText(name+'登录账号' if jst else name+'店铺');self.add_button.setText('添加账号' if jst else '添加店铺');self.accounts.setAccessibleName(name+'登录账号' if jst else name+'店铺');self.shop_options.setVisible(not jst);self.jst_note.setVisible(jst);self.sync_button.setVisible(True)
+        self.selection_title.setText(name+'登录账号' if jst else name+'店铺');self.add_button.setText('添加账号' if jst else '添加店铺');self.accounts.setAccessibleName(name+'登录账号' if jst else name+'店铺');self.shop_options.setVisible(not jst);self.alipay_options.setVisible(not jst);self.jst_note.setVisible(jst);self.sync_button.setVisible(True)
         for a in rows:
             if search not in a['name'].casefold():continue
             item=QListWidgetItem(a['name']);item.setData(USER,a['id']);item.setFlags(item.flags()|Qt.ItemFlag.ItemIsUserCheckable);item.setCheckState(CHECKED if self.enabled[self.platform] and a.get('enabled',True) else UNCHECKED);self.accounts.addItem(item)
@@ -401,7 +404,7 @@ class App(QMainWindow):
         self.accounts_stack.setCurrentIndex(0 if self.accounts.count() else 1)
         texts=self.account_empty.findChildren(QLabel);texts[0].setText('没有匹配店铺' if search and rows else '添加'+name+('登录账号' if jst else '店铺'));texts[1].setText('试试其他店铺名称。' if search and rows else '可保存登录信息；需要验证时在 Chrome 完成登录。' if jst else '填写与后台一致的店铺名称，每家店铺保存一组登录信息。')
         count=sum(bool(a.get('enabled',True)) for a in rows) if self.enabled[self.platform] else 0;self.count.setText(f'已选 {count} / {len(rows)}');self.all_shops.blockSignals(True);self.all_shops.setChecked(bool(rows) and count==len(rows));self.all_shops.blockSignals(False)
-        self.hint.setText('账号密码加密保存在本机。' if jst else '聚核算、收入账单和支付宝月资金账单：按整月导出；支付宝保留原始 ZIP，并生成明细与汇总 Sheet。');self.accounts.blockSignals(False);self.accounts.setCurrentItem(chosen or (self.accounts.item(0) if self.accounts.count() else None));self.account_selected(self.accounts.currentItem());self.platform_summary()
+        self.hint.setText('账号密码加密保存在本机。' if jst else '默认导出聚核算与收入账单；勾选后，主账号另导出支付宝月资金账单，保留 ZIP 和明细、汇总 Sheet。');self.accounts.blockSignals(False);self.accounts.setCurrentItem(chosen or (self.accounts.item(0) if self.accounts.count() else None));self.account_selected(self.accounts.currentItem());self.platform_summary()
     def account_selected(self,item,*_):
         self.current=item.data(USER) if item else None;self.sync_button.setEnabled(bool(self.selected()) and not self.busy);self.more_button.setEnabled(bool(self.selected()) and not self.busy)
     def account_check(self,item):
@@ -477,7 +480,7 @@ class App(QMainWindow):
             if not self.output.text().strip():raise ValueError('请选择保存位置')
             accounts=[a for a in self.store.items if self.enabled[a['platform']] and a.get('enabled',True)]
             if not accounts:raise ValueError('请勾选平台，并添加聚水潭账号或平台店铺')
-            self.save_settings();jobs=[(self.engine.create(a,start,end,self.output.text(),True,[]),a) for a in accounts];self.render_tasks()
+            self.save_settings();jobs=[(self.engine.create(a,start,end,self.output.text(),True,[],include_alipay=self.alipay_check.isChecked()),a) for a in accounts];self.render_tasks()
             def run():
                 for index,(task,a) in enumerate(jobs):
                     # 同一平台后面还有账号时必须先退出当前账号，否则下一个会沿用它的登录态；
@@ -557,7 +560,7 @@ class App(QMainWindow):
         path=QFileDialog.getExistingDirectory(self,'选择保存文件夹',self.output.text())
         if path:self.output.setText(path);self.save_settings()
     def save_settings(self):
-        self.config.update(output=self.output.text() if hasattr(self,'output') else self.config.get('output',''),platforms=self.enabled);atomic(self.config_path,self.config)
+        self.config.update(output=self.output.text() if hasattr(self,'output') else self.config.get('output',''),platforms=self.enabled,includeAlipay=self.alipay_check.isChecked());atomic(self.config_path,self.config)
     def settings(self):
         if self.busy:return
         dialog=QDialog(self);dialog.setWindowTitle('设置');dialog.setMinimumWidth(500);layout=QVBoxLayout(dialog);layout.setContentsMargins(24,24,24,24);layout.setSpacing(16)
