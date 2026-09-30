@@ -14,6 +14,15 @@
       "tab": "收入账单/月汇总",
       "billType": "货款收入",
       "downloadAction": "下载全量明细"
+    },
+    {
+      "name": "支付宝月资金账单",
+      "entry": "https://enterpriseportal.alipay.com/portal/trustRedirect.htm?sign_from=3000",
+      "url": "https://b.alipay.com/page/mbillexprod/bill/download/fundBill",
+      "tab": "月账单",
+      "downloadAction": "对应月份的账单已生成",
+      "format": "官方 ZIP（账务明细及账务汇总 CSV）",
+      "verifiedAt": "2026-09-30"
     }
   ],
   "liveDownloadVerified": true,

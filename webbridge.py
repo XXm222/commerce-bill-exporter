@@ -530,8 +530,9 @@ class Chrome:
           const m=t.match(/客服\s+([^\s]{2,30}?(?:旗舰店|专营店|专卖店|企业店|官方店|店))\s/);
           return m?m[1]:'';})()''') or ''
 
-    def download(self, trigger, folder, name, timeout=180):
+    def download(self, trigger, folder, name, timeout=180, *, suffixes=None):
         """Observe Chrome's Downloads folder; accept exactly one monthly file."""
+        allowed_suffixes = SHEET_SUFFIXES if suffixes is None else set(suffixes)
         downloads = Path.home() / 'Downloads'
         if not downloads.is_dir():
             raise RuntimeError(f'找不到 Chrome 默认下载目录：{downloads}；请检查浏览器下载位置')
@@ -544,7 +545,7 @@ class Chrome:
         while time.monotonic() < deadline:
             matches = []
             for path in downloads.iterdir():
-                if not path.is_file() or path.suffix.lower() not in SHEET_SUFFIXES:
+                if not path.is_file() or path.suffix.lower() not in allowed_suffixes:
                     continue
                 stamp = (path.stat().st_mtime_ns, path.stat().st_size)
                 if before.get(path.name) == stamp or not stamp[1]:

@@ -9,6 +9,7 @@ from webbridge import Chrome, TMALL_LOGIN_URL
 import jst_export as jst
 import tmall_export as tmall
 import tmall_bridge
+import alipay_export
 from tables import read_table
 import xlsx_writer
 from workbook import prepare_sheets, source_order_counts, verify_xlsx
@@ -68,7 +69,7 @@ def cached_sources(source_dir,key,month):
     只认平台会产出的表格类型，并按类型收窄范围：同一前缀下还有中间产物与工作簿草稿，
     靠前缀 glob 取第一个会取到 .jsonl 这种东西。
     """
-    kinds={'.csv','.xlsx','.xlsm','.xls','.txt'}
+    kinds={'.zip'} if key=='alipay_month' else {'.csv','.xlsx','.xlsm','.xls','.txt'}
     return sorted(p for p in source_dir.glob(f'{key}-{month}.*') if p.suffix.lower() in kinds)
 
 def ensure_writable(folder):
@@ -311,6 +312,19 @@ class Engine:
     def stop(self):self.cancelled=True
     def checkpoint(self):
         if self.cancelled:raise RuntimeError('已停止；已下载文件和平台任务已保留，可继续')
+    def submit_tmall_credentials(self,browser,account):
+        """官方支付宝 SSO 再次要求淘宝登录时，使用保存凭据提交当前表单。"""
+        self.checkpoint()
+        password=self.store.password(account)
+        try:
+            if not account.get('username') or not password:
+                return {'submitted':False,'reason':'missing_credentials'}
+            if not browser.wait_for_login_form():
+                return {'submitted':False,'reason':'form_missing'}
+            return browser.autofill(account['username'],password)
+        finally:
+            password=''
+
     def open_account(self,account):
         self.checkpoint()
         browser=Chrome(self.data,account,self.chrome_path);browser.start();self.browser=browser
@@ -758,7 +772,8 @@ class Engine:
                     needed=[m for m in months if not cached_sources(source_dir,key,m)]
                     if not needed: continue
                     self.update(task,stage=f"{flow['name']}：范围查询 {needed[0]}~{needed[-1]}")
-                    paths=tmall_bridge.fetch_source(browser,key,needed,source_dir,lambda text:self.notify('stage',text),self.checkpoint)
+                    options={'authenticate':lambda:self.submit_tmall_credentials(browser,account)} if key=='alipay_month' else {}
+                    paths=tmall_bridge.fetch_source(browser,key,needed,source_dir,lambda text:self.notify('stage',text),self.checkpoint,**options)
                     for m,p in paths.items():
                         downloaded[(key,m)]=p
                     if key=='fund_detail':
@@ -787,16 +802,21 @@ class Engine:
                     destination.mkdir(parents=True,exist_ok=True)
                     final=destination/tmall_filename(flow['name'],month)
                     archive(draft,final)
+                    if key=='alipay_month':
+                        original=final.with_suffix('.zip')
+                        archive(source,original)
+                        produced.append(original)
+                        checksums[str(original)]=hashlib.sha256(original.read_bytes()).hexdigest()
                     produced.append(final)
                     checksums[str(final)]=hashlib.sha256(final.read_bytes()).hexdigest()
                     total_rows+=index['rows']
                     # 增量写入 files/rows：中途失败时界面仍能看到已完成的工作簿，
                     # rows 也要累计，否则多工作簿任务只会显示最后一个的行数。
                     self.update(task,file=str(final),files=[str(p) for p in produced],
-                                sheetCount=len(produced),rows=total_rows,
+                                sheetCount=sum(p.suffix=='.xlsx' for p in produced),rows=total_rows,
                                 stage=f"{flow['name']}：{month} 完成")
-            self.update(task,status='done',stage=f'导出完成，共 {len(produced)} 个工作簿',
-                        files=[str(p) for p in produced],checksums=checksums,rows=total_rows,
+            self.update(task,status='done',stage=f'导出完成，共 {sum(p.suffix==".xlsx" for p in produced)} 个工作簿',
+                        files=[str(p) for p in produced],sheetCount=sum(p.suffix=='.xlsx' for p in produced),checksums=checksums,rows=total_rows,
                         finishedAt=dt.datetime.now().isoformat(timespec='seconds'),error=None)
             return produced
         except Exception as exc:
@@ -814,6 +834,13 @@ class Engine:
         label 用于在报错里补上月份：一次导出可能覆盖好几个自然月，只说「哪个来源」
         用户无法判断是哪个月出的问题。
         """
+        if flow.get('key')=='alipay_month':
+            index=alipay_export.prepare_workbook(folder,source,stem,month)
+            index_path=folder/f'{stem}.sheets.json'
+            jst.write_json(index_path,index)
+            self.build_excel(index_path,draft,task)
+            verify_xlsx(draft,index)
+            return index
         headers,rows=read_table(source)
         if not rows:
             # 空明细有两种可能：这个月确实没有数据（所选日期跨到本月时很常见），

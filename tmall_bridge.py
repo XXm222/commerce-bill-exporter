@@ -355,7 +355,7 @@ def _ensure_range_results(browser, months):
         _wait_any_target_row(browser, months)
 
 
-def fetch_source(browser, key, months, folder, notify=None, checkpoint=None):
+def fetch_source(browser, key, months, folder, notify=None, checkpoint=None, *, authenticate=None):
     """对一组月份做一次范围查询、逐行下载；返回 {month: path}。
 
     一次查 [起点, 终点]，表格里每个月一行；没数据的月份不出行，自动跳过、不报错、
@@ -363,6 +363,9 @@ def fetch_source(browser, key, months, folder, notify=None, checkpoint=None):
     避免点错月份。fund_detail 的页面声明数字（明细笔数/收入金额）按月收集到
     browser.last_detail_claims，供 Engine 与下载文件核对。
     """
+    if key == 'alipay_month':
+        import alipay_export
+        return alipay_export.fetch_source(browser, months, folder, notify, checkpoint, authenticate=authenticate)
     flow = dict(rules.FLOWS[key], key=key)
     if checkpoint:
         checkpoint()

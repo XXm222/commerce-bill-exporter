@@ -70,6 +70,11 @@ FLOWS = {
         # 「收入金额(元)」；两者是同一个数（真实样本对过：202608 两边都是 21,025.78）。
         'claims': {'rows': '明细笔数', 'income': '收入金额（元）', 'incomeColumn': '收入金额(元)'},
     },
+    'alipay_month': {
+        'name': '支付宝月资金账单',
+        'url': 'https://b.alipay.com/page/mbillexprod/bill/download/fundBill',
+        'mode': 'alipay_zip',
+    },
 }
 
 

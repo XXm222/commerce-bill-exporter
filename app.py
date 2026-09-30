@@ -8,7 +8,7 @@ from accounts import Store, atomic, crypt, load_json, STARTUP_PROBLEMS
 import environment
 from engine import Engine, PLATFORMS, validate_dates, export_period, next_same_platform, BASE, readable_error
 
-VERSION='0.6.3'
+VERSION='0.6.4'
 DATA=(Path.home()/'Library/Application Support/CommerceBillExport/Desktop' if sys.platform=='darwin' else Path(os.environ.get('LOCALAPPDATA',Path.home()))/'CommerceBillExport')
 CHECKED=Qt.CheckState.Checked;UNCHECKED=Qt.CheckState.Unchecked;USER=Qt.ItemDataRole.UserRole
 STYLE='''
@@ -169,10 +169,10 @@ class ExportProgressDialog(QDialog):
         super().closeEvent(event)
 
 def tmall_shop_name(username):
-    """天猫子账号形如「店铺名:子账号」，店铺名取第一个冒号前的部分。"""
+    """子账号取第一个冒号前的店铺名；主账号直接使用完整账号。"""
     text=username.strip()
     positions=[text.find(separator) for separator in (':','：') if separator in text]
-    if not positions:return ''
+    if not positions:return text
     index=min(positions)
     return text[:index].strip() if text[index+1:].strip() else ''
 
@@ -401,7 +401,7 @@ class App(QMainWindow):
         self.accounts_stack.setCurrentIndex(0 if self.accounts.count() else 1)
         texts=self.account_empty.findChildren(QLabel);texts[0].setText('没有匹配店铺' if search and rows else '添加'+name+('登录账号' if jst else '店铺'));texts[1].setText('试试其他店铺名称。' if search and rows else '可保存登录信息；需要验证时在 Chrome 完成登录。' if jst else '填写与后台一致的店铺名称，每家店铺保存一组登录信息。')
         count=sum(bool(a.get('enabled',True)) for a in rows) if self.enabled[self.platform] else 0;self.count.setText(f'已选 {count} / {len(rows)}');self.all_shops.blockSignals(True);self.all_shops.setChecked(bool(rows) and count==len(rows));self.all_shops.blockSignals(False)
-        self.hint.setText('账号密码加密保存在本机。' if jst else '聚核算月度明细与收入账单全量明细：按所选日期覆盖的整月导出，每月一个工作簿。');self.accounts.blockSignals(False);self.accounts.setCurrentItem(chosen or (self.accounts.item(0) if self.accounts.count() else None));self.account_selected(self.accounts.currentItem());self.platform_summary()
+        self.hint.setText('账号密码加密保存在本机。' if jst else '聚核算、收入账单和支付宝月资金账单：按整月导出；支付宝保留原始 ZIP，并生成明细与汇总 Sheet。');self.accounts.blockSignals(False);self.accounts.setCurrentItem(chosen or (self.accounts.item(0) if self.accounts.count() else None));self.account_selected(self.accounts.currentItem());self.platform_summary()
     def account_selected(self,item,*_):
         self.current=item.data(USER) if item else None;self.sync_button.setEnabled(bool(self.selected()) and not self.busy);self.more_button.setEnabled(bool(self.selected()) and not self.busy)
     def account_check(self,item):
@@ -423,9 +423,9 @@ class App(QMainWindow):
             if key=='name':field.setPlaceholderText('例如：公司主账号' if self.platform=='jst' else '例如：品牌旗舰店')
             fields[key]=field;form.addRow(title,field)
         if self.platform=='tmall' and not a:
-            fields['name'].setPlaceholderText('由登录账号中冒号前的店铺名自动生成')
+            fields['name'].setPlaceholderText('由登录账号自动生成（主账号或店铺名:子账号）')
             fields['name'].setReadOnly(True)
-            fields['username'].setPlaceholderText('例如：品牌旗舰店:子账号')
+            fields['username'].setPlaceholderText('例如：品牌旗舰店 或 品牌旗舰店:子账号')
             fields['username'].textChanged.connect(lambda text:fields['name'].setText(tmall_shop_name(text)))
         layout.addLayout(form);hint=label('密码使用系统加密保存；登录时会自动填写账号密码、勾选登录协议并提交。平台要求滑块或短信验证时仍需在 Chrome 中完成验证。','Muted');hint.setWordWrap(True);layout.addWidget(hint);buttons=QHBoxLayout()
         if a:
@@ -437,7 +437,7 @@ class App(QMainWindow):
         def save():
             try:
                 if self.platform=='tmall' and not a and not fields['name'].text():
-                    raise ValueError('天猫登录账号请填写为「店铺名:子账号」，店铺名称会自动取冒号前的文字')
+                    raise ValueError('请填写天猫主账号，或完整的「店铺名:子账号」')
                 row=self.store.put(self.platform,fields['name'].text(),fields['username'].text(),fields['password'].text(),account_id)
             except Exception as e:QMessageBox.warning(dialog,'无法保存',str(e));return
             row['enabled']=True;self.enabled[self.platform]=True;self.store.save();self.save_settings();dialog.accept();self.render_accounts(row['id'])
